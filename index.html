@@ -20,7 +20,7 @@
   color-scheme:light;
   --plane:#f2f1ed; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#7c7a74;
   --grid:#e1e0d9; --axis:#c3c2b7; --ring:rgba(11,11,11,.10); --chip:#e9e8e3; --chip-on:#0b0b0b; --chip-on-ink:#fcfcfb;
-  --s3:#2a78d6; --s4:#eb6834; --s5:#1baf7a;
+  --s3:#2a78d6; --s4:#eb6834; --s5:#1baf7a; --s8:#8a5fd0;
   --up:#d03b3b; --down:#256abf; --warn-bg:#fdf3dd; --warn-ink:#6b4a00; --err-bg:#fbe6e6; --err-ink:#8a1f1f;
   --shadow:0 1px 2px rgba(11,11,11,.04);
 }
@@ -29,7 +29,7 @@
     color-scheme:dark;
     --plane:#0d0d0d; --surface:#1a1a19; --ink:#f0efec; --ink2:#c3c2b7; --muted:#959389;
     --grid:#2c2c2a; --axis:#383835; --ring:rgba(255,255,255,.10); --chip:#262624; --chip-on:#f0efec; --chip-on-ink:#1a1a19;
-    --s3:#3987e5; --s4:#d95926; --s5:#199e70;
+    --s3:#3987e5; --s4:#d95926; --s5:#199e70; --s8:#9873dc;
     --up:#e66767; --down:#5598e7; --warn-bg:#2e2510; --warn-ink:#f2d08a; --err-bg:#331616; --err-ink:#f3b0b0;
     --shadow:none;
   }
@@ -38,7 +38,7 @@
   color-scheme:dark;
   --plane:#0d0d0d; --surface:#1a1a19; --ink:#f0efec; --ink2:#c3c2b7; --muted:#959389;
   --grid:#2c2c2a; --axis:#383835; --ring:rgba(255,255,255,.10); --chip:#262624; --chip-on:#f0efec; --chip-on-ink:#1a1a19;
-  --s3:#3987e5; --s4:#d95926; --s5:#199e70;
+  --s3:#3987e5; --s4:#d95926; --s5:#199e70; --s8:#9873dc;
   --up:#e66767; --down:#5598e7; --warn-bg:#2e2510; --warn-ink:#f2d08a; --err-bg:#331616; --err-ink:#f3b0b0;
   --shadow:none;
 }
@@ -221,8 +221,11 @@ const STRATS = {
   "3": {name: "3번", title: "3번 · 미장 TQQQ", cur: "USD", color: "var(--s3)"},
   "4": {name: "4번", title: "4번 · 국장 EMA 추세", cur: "KRW", color: "var(--s4)"},
   "5": {name: "5번", title: "5번 · 미장 추세+가치", cur: "USD", color: "var(--s5)"},
+  "8": {name: "8번", title: "8번 · 국장 단타(선물)", cur: "KRW", color: "var(--s8)"},
 };
-const ORDER = ["3", "4", "5"];
+const ORDER = ["3", "4", "5", "8"];
+/* 선물 1계약 크기: 미니 코스피200(A05…) = 지수 x 5만원, 주식선물 = 주식 10주 */
+function futMult(code) { return /^A05/.test(code) ? 50000 : 10; }
 const KR_NAMES = {"418660": "나스닥100 2배", "459580": "CD금리 ETF"};
 
 /* ---------- 저장(이 폰에만) ---------- */
@@ -278,7 +281,8 @@ async function pool(items, n, fn) {
 
 /* ---------- 기록 읽어 정리 ---------- */
 const LINE = /^(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d) \[([^\]]+)\]!? ?(.*)$/;
-const FILL = /^체결 (매수|매도) (\S+) ([\d,]+)주 @ (\S+) \((.*)\)$/;
+const FILL = /^체결 (매수|매도) (\S+) ([\d,]+)(주|계약) @ (\S+) \((.*)\)$/;
+const ACC8 = /^계좌 ([\d,]+)원 \| 예수금 (-?[\d,]+)원 · 주문가능 (-?[\d,]+)원 · 증거금 ([\d,]+)원/;
 const ACC3 = /^계좌 \$([\d,.]+) \| 달러 (-?[\d,.]+) BIL ([\d,.]+) TQQQ ([\d,.]+) 반등 ([\d,.]+)/;
 const ACC4 = /^계좌 ([\d,]+)원 \| 현금 (-?[\d,]+) CD ([\d,]+) 나스닥2배 ([\d,]+) EMA묶음 ([\d,]+) 패턴 ([\d,]+)/;
 const ACC5 = /^계좌\(5번 몫\) \$([\d,.]+) = 달러 (-?[\d,.]+) \+ 주식 ([\d,.]+)/;
@@ -293,9 +297,10 @@ function parseLog(text) {
     if (tag === "요약") { const sm = parseSummary(msg.split(" | ")); if (sm) ev.sums.push(sm); continue; }
     if (!s) continue;
     let f = FILL.exec(msg);
-    if (f) { ev.fills.push({d, t, s, side: f[1] === "매수" ? "buy" : "sell", code: f[2], qty: num(f[3]), px: num(f[4]), why: f[5]}); continue; }
+    if (f) { ev.fills.push({d, t, s, side: f[1] === "매수" ? "buy" : "sell", code: f[2], qty: num(f[3]), fut: f[4] === "계약", px: num(f[5]), why: f[6]}); continue; }
     if (s === "3" && (f = ACC3.exec(msg))) ev.acct.push({d, t, s, total: num(f[1]), parts: [["현금", num(f[2])], ["BIL", num(f[3])], ["TQQQ", num(f[4])], ["반등", num(f[5])]]});
     else if (s === "4" && (f = ACC4.exec(msg))) ev.acct.push({d, t, s, total: num(f[1]), parts: [["현금", num(f[2])], ["CD", num(f[3])], ["나스닥2배", num(f[4])], ["EMA", num(f[5])], ["패턴", num(f[6])]]});
+    else if (s === "8" && (f = ACC8.exec(msg))) ev.acct.push({d, t, s, total: num(f[1]), parts: [["묶인 증거금", num(f[4])], ["남는 돈", num(f[1]) - num(f[4])]]});
     else if (s === "5" && (f = ACC5.exec(msg))) ev.acct.push({d, t, s, total: num(f[1]), parts: [["현금", num(f[2])], ["주식", num(f[3])]]});
   }
   return ev;
@@ -362,9 +367,10 @@ function build(src) {
 }
 
 async function loadAll() {
-  const [report, s3, s4, s5, logList, planList] = await Promise.all([
+  const [report, s3, s4, s5, s8, logList, planList] = await Promise.all([
     gh("report.md").catch((e) => { if (e.status === 404) return ""; throw e; }),
     gh("state_s3.json"), gh("state_s4.json"), gh("state_s5.json"),
+    gh("state_kf.json").catch((e) => { if (e.status === 404) return "{}"; throw e; }),
     gh("logs", false), gh("plans", false).catch(() => []),
   ]);
   // 지난 날 기록 파일은 안 바뀌니까 한 번 읽은 건 이 폰에 넣어 두고 바뀐 것만 다시 읽음
@@ -381,7 +387,7 @@ async function loadAll() {
   if (p4 && p4.sha !== names.sha) {
     try { const j = JSON.parse(await gh(p4.path)); names = {sha: p4.sha, map: {...names.map, ...(j.sleeve_names || {})}}; for (const p of j.pattern || []) if (p.code && p.name) names.map[p.code] = p.name; store.set("tv_names", JSON.stringify(names)); } catch (e) {}
   }
-  return build({report, st: {"3": JSON.parse(s3), "4": JSON.parse(s4), "5": JSON.parse(s5)}, logs: files.map((f) => keep[f.path].ev), names: names.map});
+  return build({report, st: {"3": JSON.parse(s3), "4": JSON.parse(s4), "5": JSON.parse(s5), "8": JSON.parse(s8)}, logs: files.map((f) => keep[f.path].ev), names: names.map});
 }
 
 /* ---------- 화면 ---------- */
@@ -404,7 +410,7 @@ function renderCards() {
     const h = el("div", "shead"); h.append(el("span", "dot"), el("h2", null, S.title));
     if (X.start) h.append(el("span", "since", `시작 ${md(X.start)}`));
     c.append(h);
-    if (!X.snap) { c.append(el("p", "empty", "아직 기록이 없어요")); box.append(c); continue; }
+    if (!X.snap) { c.append(el("p", "empty", s === "8" ? "선물 모의 계좌에 돈이 들어오면 시작해요. 아침 시가에 어제 많이 오른 종목의 주식선물을 팔고 오후에 되사고, 미니 코스피200은 오후에 사서 다음 날 아침에 팔아요" : "아직 기록이 없어요")); box.append(c); continue; }
     c.append(el("div", "big", money(X.snap.total, S.cur)));
     c.append(el("p", "asof", `${md(X.snap.d)} ${X.snap.t.slice(0, 5)} 기준 평가금액`));
     const dl = el("div", "deltas"); const lastN = X.nav[X.nav.length - 1];
@@ -449,7 +455,7 @@ function renderCards() {
   }
 }
 
-/* 수익률 그래프: 선 3개, 한 축(%), 십자선 + 툴팁 */
+/* 수익률 그래프: 전략마다 선 하나, 한 축(%), 십자선 + 툴팁 */
 function renderChart() {
   const host = $("#chart"); host.replaceChildren();
   const series = ORDER.map((s) => ({s, name: STRATS[s].name, color: STRATS[s].color, pts: DATA.strat[s].nav})).filter((x) => x.pts.length);
@@ -545,12 +551,13 @@ function renderTrades() {
     const S = STRATS[f.s], usd = S.cur === "USD";
     const r = el("div", "tr");
     r.append(el("span", "side " + f.side, f.side === "buy" ? "매수" : "매도"));
-    const mid = el("div"); const l1 = el("div", "l1", usd ? f.code : (nameOf(f.code) || f.code));
-    l1.append(el("small", null, `${f.qty.toLocaleString("ko-KR")}주`));
+    const mid = el("div"); const l1 = el("div", "l1", f.fut ? (f.why.includes(" · ") ? f.why.split(" · ").pop() : f.code) : usd ? f.code : (nameOf(f.code) || f.code));
+    const mult = f.fut ? futMult(f.code) : 1;
+    l1.append(el("small", null, `${f.qty.toLocaleString("ko-KR")}${f.fut ? "계약" : "주"}`));
     const l2 = el("div", "l2"); const dt = el("span", "dot"); dt.style.setProperty("--c", S.color);
-    l2.append(dt, document.createTextNode(`${S.name} · ${f.t.slice(0, 5)} · 1주 ${money(f.px, S.cur, usd ? 2 : 0)}`));
+    l2.append(dt, document.createTextNode(`${S.name} · ${f.t.slice(0, 5)} · ${f.fut ? "체결값 " + f.px.toLocaleString("ko-KR") : "1주 " + money(f.px, S.cur, usd ? 2 : 0)}`));
     mid.append(l1, l2, el("div", "l3", f.why));
-    const a = el("div", "amt", money(f.qty * f.px, S.cur)); a.append(el("small", null, f.side === "buy" ? "산 금액" : "판 금액"));
+    const a = el("div", "amt", money(f.qty * f.px * mult, S.cur)); a.append(el("small", null, f.side === "buy" ? "산 금액" : "판 금액"));
     r.append(mid, a); wrap.append(r);
   }
 }
