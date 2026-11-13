@@ -410,7 +410,7 @@ function renderCards() {
     const h = el("div", "shead"); h.append(el("span", "dot"), el("h2", null, S.title));
     if (X.start) h.append(el("span", "since", `시작 ${md(X.start)}`));
     c.append(h);
-    if (!X.snap) { c.append(el("p", "empty", s === "8" ? "선물 모의 계좌에 돈이 들어오면 시작해요. 아침 시가에 어제 많이 오른 종목의 주식선물을 팔고 오후에 되사고, 미니 코스피200은 오후에 사서 다음 날 아침에 팔아요" : "아직 기록이 없어요")); box.append(c); continue; }
+    if (!X.snap) { c.append(el("p", "empty", s === "8" ? "선물 모의 계좌에 돈이 들어오면 시작해요. 많이 오른 종목의 주식선물을 오후 마감에 사서 다음 날 아침에 팔고, 아침에는 같은 종목을 팔았다가 오후 마감에 되사요" : "아직 기록이 없어요")); box.append(c); continue; }
     c.append(el("div", "big", money(X.snap.total, S.cur)));
     c.append(el("p", "asof", `${md(X.snap.d)} ${X.snap.t.slice(0, 5)} 기준 평가금액`));
     const dl = el("div", "deltas"); const lastN = X.nav[X.nav.length - 1];
